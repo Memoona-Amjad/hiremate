@@ -47,6 +47,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.exception_handler(Exception)
+async def friendly_errors(request: Request, exc: Exception) -> JSONResponse:
+    """Last safety net: log the real error, show the user a friendly message (no stack trace)."""
+    log.exception("Unhandled error on %s", request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Something went wrong on our side. Please try again."})
+
+
 checkpointer = InMemorySaver()
 graph = build_graph(checkpointer)
 

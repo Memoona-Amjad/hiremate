@@ -75,3 +75,40 @@ def test_resume_unknown_run(client):
 
 def test_health(client):
     assert client.get("/api/health").json()["ok"] is True
+
+
+def test_unreadable_pdf_gives_friendly_400(client):
+    r = client.post(
+        "/api/runs",
+        data={"job_text": "x" * 200},
+        files={"cv_file": ("cv.pdf", b"this is not really a pdf", "application/pdf")},
+    )
+    assert r.status_code == 400
+    assert "PDF" in r.json()["detail"]
+
+
+def test_blocked_job_link_asks_user_to_paste(client, monkeypatch):
+    from app.tools import ToolError
+
+    async def blocked(url):
+        raise ToolError("The job site blocked us or didn't respond.")
+
+    monkeypatch.setattr(nodes, "fetch_job_text", blocked)
+    cv = (main.SAMPLES_DIR / "sample_cv.txt").read_text(encoding="utf-8")
+    events = parse_sse(client.post("/api/runs", data={"cv_text": cv, "job_url": "https://jobs.example.com/1"}).text)
+    assert events[-1][0] == "interrupt"
+    assert events[-1][1]["kind"] == "need_job_text"
+    run_id = events[0][1]["run_id"]
+
+    # Too-short paste is rejected with a friendly message, then a real paste continues the run.
+    assert client.post(f"/api/runs/{run_id}/resume", json={"job_text": "short"}).status_code == 400
+    events = parse_sse(client.post(f"/api/runs/{run_id}/resume", json={"job_text": "A real job post. " * 20}).text)
+    assert events[-1][0] == "interrupt"
+    assert events[-1][1]["kind"] == "confirm_gaps"
+
+
+def test_unexpected_error_is_friendly(monkeypatch):
+    monkeypatch.setattr(main, "_sample", lambda name: (_ for _ in ()).throw(RuntimeError("secret internals")))
+    r = TestClient(main.app, raise_server_exceptions=False).get("/api/sample")
+    assert r.status_code == 500
+    assert "secret" not in r.text
