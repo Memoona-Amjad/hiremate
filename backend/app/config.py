@@ -18,9 +18,9 @@ def _list(value: str) -> list[str]:
 class Settings:
     gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
     llm_model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", ""))
-    llm_fallback_model: str = field(default_factory=lambda: os.getenv("LLM_FALLBACK_MODEL", ""))
+    llm_fallback_model: str = field(default_factory=lambda: os.getenv("LLM_FALLBACK_MODEL") or "")
     allowed_origins: list[str] = field(
-        default_factory=lambda: _list(os.getenv("ALLOWED_ORIGINS", "http://localhost:3000"))
+        default_factory=lambda: _list(os.getenv("ALLOWED_ORIGINS") or "http://localhost:3000")
     )
     rate_limit_per_day: int = field(
         default_factory=lambda: int(os.getenv("RATE_LIMIT_PER_DAY") or 10)

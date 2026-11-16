@@ -301,14 +301,15 @@ async def critic(state: HireMateState) -> dict:
 
     retries_used = draft - 1
     if passed:
-        emit(node, "done", f"Approved: {report.score}/100 (needs {settings.critic_threshold})", {"score": report.score})
+        emit(node, "done", f"Approved: {report.score}/100 (needs {settings.critic_threshold})",
+             {"score": report.score, "passed": True})
     elif retries_used < settings.max_retries:
         emit(
             node,
             "retry",
             f"Score {report.score}/100 is below {settings.critic_threshold}. Sending back to the CV writer "
             f"(retry {retries_used + 1} of {settings.max_retries})",
-            {"score": report.score, "issues": report.issues[:3]},
+            {"score": report.score, "passed": False, "issues": report.issues[:3]},
         )
     else:
         # Out of retries: hand over the best draft we produced.
@@ -319,7 +320,7 @@ async def critic(state: HireMateState) -> dict:
             node,
             "done",
             f"Used all {settings.max_retries} retries. Showing the best draft ({best['score']}/100) with the critic's notes",
-            {"score": best["score"]},
+            {"score": report.score, "passed": False, "best_score": best["score"]},
         )
     return updates
 

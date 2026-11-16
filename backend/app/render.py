@@ -4,9 +4,9 @@ from app.schemas import CoverLetter, CVData
 
 
 def cv_to_markdown(cv: CVData) -> str:
-    lines: list[str] = [f"# {cv.name}", f"**{cv.headline}**"]
+    lines: list[str] = [f"# {cv.name}", "", f"**{cv.headline}**"]
     if cv.contact:
-        lines.append(cv.contact)
+        lines += ["", cv.contact]  # blank lines keep these as separate paragraphs
     if cv.summary:
         lines += ["", "## Summary", cv.summary]
     if cv.skills:
