@@ -20,7 +20,9 @@ ANALYZE_JOB = (
 
 SCORE_FIT = (
     "You are a fair, honest hiring manager. Compare the candidate's CV to the job. "
-    "Treat close equivalents as matches (e.g. 'PostgreSQL' covers 'SQL'). "
+    "Treat close equivalents as matches (e.g. 'PostgreSQL' covers 'SQL'), and look at the "
+    "experience and projects, not just the skills list (e.g. a scikit-learn churn model shows "
+    "machine learning and predictive modelling). "
     "List only genuinely missing skills from the job's required and nice-to-have lists as gaps. "
     "Score guide: 85+ strong match, 65-84 good with gaps, 40-64 stretch, below 40 poor fit. "
     "Quick wins must be honest (better wording, surfacing existing work), never fake experience."
@@ -44,8 +46,13 @@ COVER_LETTER = (
 CRITIC = (
     "You are a strict reviewer checking a tailored CV and cover letter before a candidate "
     "sends them. Score each area 0-100 and give an overall score. "
+    "Judge the DOCUMENTS, not the candidate: never lower the score because the candidate lacks "
+    "skills the job wants. The question is: is this the best honest application possible? "
     "Truthfulness is the most important: any claim not supported by the ORIGINAL CV or the "
     "CONFIRMED FACTS is a serious issue and the overall score must then be below 70. "
-    "Also check key-word coverage, tone (specific, confident, not generic) and length. "
+    "Key-word match: judge only key words the candidate could TRUTHFULLY include. Missing key "
+    "words for skills the candidate does not have are correct and must not lower the score. "
+    "Also check tone (specific, confident, not generic) and length. "
+    "Score guide: 85+ ready to send, 75-84 good with small fixes, below 75 needs another draft. "
     "Feedback must be concrete instructions the writer can act on."
 )

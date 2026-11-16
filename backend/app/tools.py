@@ -3,8 +3,9 @@
 - pdf_to_text:          read text out of an uploaded CV PDF
 - fetch_job_text:       download a job post from a link and strip it to readable text
 - keyword_coverage:     how many of the job's keywords already appear in a text
-- find_unsupported_skills: skills in the new CV that are not backed by the original
-                           CV or by something the user confirmed (truthfulness guard)
+- find_unsupported_skills: skills in the new CV not found word-for-word in the original
+                           CV or the user's confirmations (to be double-checked)
+- find_declined_claims:   gaps the user said they DON'T have that the new CV mentions anyway
 """
 
 import io
@@ -79,7 +80,25 @@ def keyword_coverage(text: str, keywords: list[str]) -> dict:
     return {"percent": percent, "found": found, "missing": missing}
 
 
+def _skill_pieces(entry: str) -> list[str]:
+    """'Modeling: scikit-learn, regression (OLS)' -> ['scikit-learn', 'regression', 'OLS']."""
+    if ":" in entry:
+        entry = entry.split(":", 1)[1]  # drop a category label like "Modeling:"
+    return [p.strip() for p in re.split(r"[,;()]", entry) if p.strip()]
+
+
 def find_unsupported_skills(new_skills: list[str], original_cv_text: str, confirmed: list[str]) -> list[str]:
     """Skills listed in the tailored CV that neither the original CV nor the user backs up."""
     evidence = _normalise(original_cv_text + " " + " ".join(confirmed))
-    return [s for s in new_skills if not _mentions(evidence, s)]
+    unsupported: list[str] = []
+    for entry in new_skills:
+        for piece in _skill_pieces(entry):
+            if not _mentions(evidence, piece) and piece not in unsupported:
+                unsupported.append(piece)
+    return unsupported
+
+
+def find_declined_claims(new_cv_text: str, original_cv_text: str, declined: list[str]) -> list[str]:
+    """Declined skills that appear in the new CV but were never in the original CV."""
+    new_n, original_n = _normalise(new_cv_text), _normalise(original_cv_text)
+    return [d for d in declined if _mentions(new_n, d) and not _mentions(original_n, d)]

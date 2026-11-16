@@ -20,6 +20,7 @@ class HireMateState(TypedDict, total=False):
     fit: dict               # FitScore + keyword coverage
     confirmed: list[str]    # gaps the user said they really have
     confirmed_notes: dict[str, str]  # optional "how I used it" note per confirmed skill
+    declined: list[str]     # gaps the user did not tick: must never be claimed
     tailored_cv: dict       # TailoredCV
     cv_markdown: str
     cover_letter: dict      # CoverLetter

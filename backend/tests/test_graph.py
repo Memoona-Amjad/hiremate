@@ -81,8 +81,9 @@ def test_max_two_retries_then_best_draft(monkeypatch):
 
 
 def test_unconfirmed_skills_are_ignored_and_flagged(monkeypatch):
-    # User "confirms" a skill that was never offered; the CV writer invents Kubernetes.
-    values, _ = asyncio.run(run_graph(monkeypatch, [95, 95, 95], ["Rust"], extra_skill="Kubernetes"))
+    # User "confirms" a skill that was never offered (ignored), declines Docker,
+    # and the CV writer claims Docker anyway.
+    values, _ = asyncio.run(run_graph(monkeypatch, [95, 95, 95], ["Rust"], extra_skill="Docker"))
     assert values["confirmed"] == []
-    assert values["critic"]["unsupported_skills"] == ["Kubernetes"]
+    assert values["critic"]["unsupported_skills"] == ["Docker"]
     assert values["critic"]["score"] <= 65  # truth check overrides the LLM's 95

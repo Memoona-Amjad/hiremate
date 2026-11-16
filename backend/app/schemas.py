@@ -69,6 +69,10 @@ class FitScore(BaseModel):
 
 # ---------- Writing ----------
 class TailoredCV(CVData):
+    skills: list[str] = Field(
+        default_factory=list,
+        description="Individual skill names, most relevant first. No category labels like 'Data:'.",
+    )
     changes_made: list[str] = Field(
         default_factory=list, description="Short list of what was changed and why"
     )

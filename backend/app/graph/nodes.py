@@ -14,7 +14,13 @@ from app.graph.state import HireMateState
 from app.llm import generate_structured
 from app.render import cv_to_markdown, letter_to_text, word_count
 from app.schemas import CoverLetter, CriticReport, CVData, FitScore, JobData, TailoredCV
-from app.tools import ToolError, fetch_job_text, find_unsupported_skills, keyword_coverage
+from app.tools import (
+    ToolError,
+    fetch_job_text,
+    find_declined_claims,
+    find_unsupported_skills,
+    keyword_coverage,
+)
 
 
 def _confirmed_facts(state: HireMateState) -> str:
@@ -24,6 +30,12 @@ def _confirmed_facts(state: HireMateState) -> str:
     if not confirmed:
         return "(none: the candidate did not confirm any extra skills)"
     return "\n".join(f"- {s}" + (f": {notes[s]}" if notes.get(s) else "") for s in confirmed)
+
+
+def _declined_skills(state: HireMateState) -> str:
+    """Gaps the user did NOT tick: the writers must not claim these."""
+    declined = state.get("declined", [])
+    return ", ".join(declined) if declined else "(none)"
 
 
 # ---------------------------------------------------------------- 1. parse_cv
@@ -74,10 +86,12 @@ async def analyze_job(state: HireMateState) -> dict:
         f"JOB POST:\n{job_text}", JobData, prompts.ANALYZE_JOB, temperature=0.0,
         on_retry=retry_reporter(node),
     )
+    # Avoid "Junior Junior Data Scientist" when the title already says the level.
+    label = job.title if job.seniority.lower() in job.title.lower() else f"{job.seniority} {job.title}"
     emit(
         node,
         "done",
-        f"{job.seniority} {job.title}: {len(job.required_skills)} required skills, "
+        f"{label}: {len(job.required_skills)} required skills, "
         f"{len(job.nice_to_have)} nice-to-haves",
         {"title": job.title, "company": job.company},
     )
@@ -136,7 +150,14 @@ async def human_review(state: HireMateState) -> dict:
         emit(node, "done", f"You confirmed {len(confirmed)}: {', '.join(confirmed)}")
     else:
         emit(node, "done", "No extra skills confirmed: the CV will use only what it already says")
-    return {"confirmed": confirmed, "confirmed_notes": notes, "draft": 0, "critic_history": []}
+    declined = [g["skill"] for g in gaps if g["skill"] not in confirmed]
+    return {
+        "confirmed": confirmed,
+        "confirmed_notes": notes,
+        "declined": declined,
+        "draft": 0,
+        "critic_history": [],
+    }
 
 
 # ---------------------------------------------------------------- 5. tailor_cv
@@ -156,6 +177,7 @@ async def tailor_cv(state: HireMateState) -> dict:
         f"JOB:\n{json.dumps(state['job'], indent=1)}\n\n"
         f"ORIGINAL CV:\n{json.dumps(state['cv'], indent=1)}\n\n"
         f"CONFIRMED FACTS (the candidate ticked these):\n{_confirmed_facts(state)}\n\n"
+        f"THE CANDIDATE DOES NOT HAVE (never list or imply these): {_declined_skills(state)}\n\n"
         f"QUICK WINS suggested earlier:\n{json.dumps(state['fit']['quick_wins'])}"
         f"{feedback}"
     )
@@ -182,7 +204,8 @@ async def write_cover_letter(state: HireMateState) -> dict:
     prompt = (
         f"JOB:\n{json.dumps(state['job'], indent=1)}\n\n"
         f"TAILORED CV:\n{state['cv_markdown']}\n\n"
-        f"CONFIRMED FACTS:\n{_confirmed_facts(state)}"
+        f"CONFIRMED FACTS:\n{_confirmed_facts(state)}\n\n"
+        f"THE CANDIDATE DOES NOT HAVE (never claim these): {_declined_skills(state)}"
         f"{feedback}"
     )
     letter = await generate_structured(
@@ -199,11 +222,20 @@ async def critic(state: HireMateState) -> dict:
     draft = state["draft"]
     emit(node, "started", f"Reviewing draft {draft}")
 
-    # Tool 1: hard truthfulness check (no LLM): every listed skill must have evidence.
+    # Tool 1: truthfulness check (no LLM), two levels:
+    #  - claimed_declined: the CV claims a gap the user said they DON'T have -> always fails.
+    #  - unverified: skill wording not found word-for-word in the CV -> the critic must verify it
+    #    (it may be honest rewording, e.g. a scikit-learn project described as "machine learning").
     evidence = state.get("confirmed", []) + list(state.get("confirmed_notes", {}).values())
-    unsupported = find_unsupported_skills(state["tailored_cv"]["skills"], state["cv_text"], evidence)
-    if unsupported:
-        emit(node, "tool", f"truth_check → ⚠ not backed by your CV: {', '.join(unsupported)}")
+    claimed_declined = find_declined_claims(state["cv_markdown"], state["cv_text"], state.get("declined", []))
+    unverified = [
+        s for s in find_unsupported_skills(state["tailored_cv"]["skills"], state["cv_text"], evidence)
+        if s not in claimed_declined
+    ]
+    if claimed_declined:
+        emit(node, "tool", f"truth_check → ✖ claims skills you said you don't have: {', '.join(claimed_declined)}")
+    elif unverified:
+        emit(node, "tool", f"truth_check → no declined skills claimed; asking the critic to verify wording: {', '.join(unverified)}")
     else:
         emit(node, "tool", "truth_check → every listed skill is backed by your CV or your confirmations")
 
@@ -218,22 +250,26 @@ async def critic(state: HireMateState) -> dict:
     prompt = (
         f"ORIGINAL CV:\n{state['cv_text']}\n\n"
         f"CONFIRMED FACTS:\n{_confirmed_facts(state)}\n\n"
+        f"SKILLS THE CANDIDATE SAID THEY DO NOT HAVE (their absence is CORRECT, do not penalise it): "
+        f"{_declined_skills(state)}\n\n"
         f"JOB:\n{json.dumps(state['job'], indent=1)}\n\n"
         f"TAILORED CV:\n{state['cv_markdown']}\n\n"
         f"COVER LETTER ({letter_words} words):\n{state['letter_text']}\n\n"
-        f"AUTOMATIC CHECKS: unsupported skills = {unsupported or 'none'}; "
+        f"AUTOMATIC CHECKS: skills claimed that the candidate declined = {claimed_declined or 'none'}; "
+        f"skill wording not found word-for-word in the CV (verify each is a fair description of "
+        f"real CV content, flag it if not) = {unverified or 'none'}; "
         f"keyword coverage = {coverage['percent']}% (missing: {coverage['missing']})"
     )
     report = await generate_structured(
         prompt, CriticReport, prompts.CRITIC, temperature=0.0, on_retry=retry_reporter(node)
     )
 
-    # The automatic truth check overrides the LLM: unsupported skills always fail the draft.
-    if unsupported:
+    # The automatic truth check overrides the LLM: claiming a declined skill always fails.
+    if claimed_declined:
         report.truthfulness = min(report.truthfulness, 50)
         report.score = min(report.score, 65)
-        report.issues.insert(0, f"Skills not backed by the CV or your confirmations: {', '.join(unsupported)}")
-        report.feedback = f"Remove these unsupported skills: {', '.join(unsupported)}. " + report.feedback
+        report.issues.insert(0, f"Claims skills you said you don't have: {', '.join(claimed_declined)}")
+        report.feedback = f"Remove every mention of: {', '.join(claimed_declined)}. " + report.feedback
 
     passed = report.score >= settings.critic_threshold
     result = {
@@ -241,7 +277,8 @@ async def critic(state: HireMateState) -> dict:
         "draft": draft,
         "passed": passed,
         "threshold": settings.critic_threshold,
-        "unsupported_skills": unsupported,
+        "unsupported_skills": claimed_declined,
+        "unverified_skills": unverified,
         "keyword_coverage": coverage,
         "keyword_coverage_before": before,
         "letter_words": letter_words,

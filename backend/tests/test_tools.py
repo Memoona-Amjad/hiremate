@@ -1,4 +1,4 @@
-from app.tools import find_unsupported_skills, keyword_coverage
+from app.tools import find_declined_claims, find_unsupported_skills, keyword_coverage
 
 
 def test_keyword_coverage_counts_matches():
@@ -19,3 +19,15 @@ def test_unsupported_skills_flags_invented_ones():
     cv = "Skills: Python, SQL, Power BI"
     flagged = find_unsupported_skills(["Python", "Docker", "Power BI", "AWS"], cv, confirmed=["AWS"])
     assert flagged == ["Docker"]
+
+
+def test_unsupported_skills_handles_category_labels():
+    cv = "Python, scikit-learn, Power BI, Excel"
+    flagged = find_unsupported_skills(["Modeling: scikit-learn, Kubernetes", "Python (pandas)"], cv, [])
+    assert flagged == ["Kubernetes", "pandas"]
+
+
+def test_declined_claims():
+    original = "Python and SQL"
+    new = "Python, SQL and Docker. Deployed with Docker."
+    assert find_declined_claims(new, original, ["Docker", "AWS"]) == ["Docker"]

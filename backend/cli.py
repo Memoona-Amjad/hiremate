@@ -1,7 +1,8 @@
 """Run the whole agent team from the command line on the bundled sample (or your own files).
 
     python cli.py                      # sample CV + sample job, asks you to confirm gaps
-    python cli.py --yes                # sample, auto-confirm nothing (non-interactive)
+    python cli.py --yes                # sample, non-interactive, confirms nothing
+    python cli.py --confirm "machine learning,predictive"   # non-interactive, confirms matching gaps
     python cli.py --cv my_cv.pdf --job job.txt
 """
 
@@ -27,7 +28,7 @@ def load_cv(path: Path) -> tuple[str, str]:
     return path.read_text(encoding="utf-8"), "paste"
 
 
-def ask_user(payload: dict, auto: bool) -> dict:
+def ask_user(payload: dict, auto: bool, auto_confirm: list[str]) -> dict:
     """Answer an interrupt from the terminal."""
     if payload["kind"] == "need_job_text":
         print(f"\n{payload['message']}\nPaste the job text, then press Enter twice:")
@@ -38,6 +39,10 @@ def ask_user(payload: dict, auto: bool) -> dict:
     print(f"\n=== HUMAN REVIEW ===\n{payload['question']}")
     for i, gap in enumerate(gaps, 1):
         print(f"  {i}. {gap['skill']} ({gap['importance']}): {gap['why_it_matters']}")
+    if auto_confirm:
+        picks = [g["skill"] for g in gaps if any(a in g["skill"].lower() for a in auto_confirm)]
+        print(f"  (auto mode: confirming {picks or 'none'} out of {[g['skill'] for g in gaps]})")
+        return {"confirmed": picks, "notes": {}}
     if auto or not gaps:
         print("  (auto mode: confirming none)")
         return {"confirmed": [], "notes": {}}
@@ -47,7 +52,7 @@ def ask_user(payload: dict, auto: bool) -> dict:
     return {"confirmed": picks, "notes": notes}
 
 
-async def run(cv_path: Path, job_path: Path | None, job_url: str, auto: bool) -> None:
+async def run(cv_path: Path, job_path: Path | None, job_url: str, auto: bool, auto_confirm: list[str]) -> None:
     cv_text, source = load_cv(cv_path)
     inputs = {"cv_text": cv_text, "cv_source": source, "job_text": "", "job_url": job_url}
     if job_path:
@@ -64,7 +69,7 @@ async def run(cv_path: Path, job_path: Path | None, job_url: str, auto: bool) ->
         state = await graph.aget_state(config)
         if not state.interrupts:
             break
-        next_input = Command(resume=ask_user(state.interrupts[0].value, auto))
+        next_input = Command(resume=ask_user(state.interrupts[0].value, auto, auto_confirm))
 
     final = state.values
     critic = final["critic"]
@@ -88,11 +93,13 @@ def main() -> None:
     parser.add_argument("--job", type=Path, default=None)
     parser.add_argument("--job-url", default="")
     parser.add_argument("--yes", action="store_true", help="non-interactive: confirm no gaps")
+    parser.add_argument("--confirm", default="", help="non-interactive: confirm gaps containing these words")
     args = parser.parse_args()
     if not args.job and not args.job_url:
         args.job = SAMPLES_DIR / "sample_job.txt"
     try:
-        asyncio.run(run(args.cv, args.job, args.job_url, args.yes))
+        auto_confirm = [w.strip().lower() for w in args.confirm.split(",") if w.strip()]
+        asyncio.run(run(args.cv, args.job, args.job_url, args.yes, auto_confirm))
     except (LLMError, ToolError) as exc:
         print(f"\n✖ {exc}")
         sys.exit(1)
