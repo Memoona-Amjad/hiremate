@@ -1,0 +1,37 @@
+ALEX MORGAN
+Data Analyst | Manchester, UK | alex.morgan@example.com | linkedin.com/in/alexmorgan-example
+
+SUMMARY
+Data analyst with 3 years of experience turning messy business data into clear reports and dashboards.
+Comfortable with Python, SQL and Power BI. Enjoys working with sales and marketing teams to answer
+practical questions with data.
+
+SKILLS
+Python (pandas, NumPy, matplotlib), SQL (PostgreSQL, MySQL), Power BI, Excel (pivot tables, Power Query),
+Git, Jupyter, basic statistics, data cleaning, stakeholder communication
+
+EXPERIENCE
+
+Data Analyst — BrightCart Retail Ltd, Manchester                                    Mar 2023 – Present
+- Built and maintain 12 Power BI dashboards used weekly by sales and marketing leadership.
+- Wrote SQL queries and Python scripts to automate a monthly sales report, cutting preparation time
+  from 2 days to 3 hours.
+- Analysed customer purchase data to identify the top 5% of repeat customers; findings fed into a
+  loyalty campaign that raised repeat orders by 8%.
+- Cleaned and merged data from 4 sources (web shop, CRM, stores, returns) into one reporting table.
+
+Junior Data Analyst — Lumen Insurance Group, Leeds                                  Sep 2021 – Feb 2023
+- Produced weekly claims reports in Excel and SQL for the operations team.
+- Built a simple Python model to flag unusually large claims for manual review.
+- Documented data definitions for 40+ reporting fields, reducing questions from other teams.
+
+EDUCATION
+BSc Mathematics, University of Leeds — 2021 (2:1)
+
+PROJECTS
+- Customer churn analysis (personal project): used pandas and scikit-learn logistic regression on a
+  public telecom dataset; wrote up findings in a Jupyter notebook on GitHub.
+- Football stats dashboard: scraped match data with Python and built an interactive Power BI report.
+
+CERTIFICATIONS
+- Microsoft Certified: Power BI Data Analyst Associate (2023)

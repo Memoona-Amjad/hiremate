@@ -1,0 +1,33 @@
+Junior Data Scientist — Northwind Analytics (Hybrid, Manchester)
+
+About us
+Northwind Analytics helps mid-sized retailers make better decisions with data. Our small, friendly
+team builds forecasting and customer analytics products used by 60+ retail brands.
+
+The role
+We are looking for a Junior Data Scientist to join our Customer Insights squad. You will build models
+that predict customer behaviour, run experiments, and explain results to clients in plain English.
+
+What you will do
+- Build and evaluate machine learning models (e.g. churn, customer lifetime value, demand forecasting).
+- Design and analyse A/B tests for client marketing campaigns.
+- Write clean, tested Python code and SQL that runs in production pipelines.
+- Present findings to non-technical clients through dashboards and short reports.
+- Work with data engineers to deploy models using Docker and AWS.
+
+What we are looking for (required)
+- 2+ years of experience working with data in a professional setting.
+- Strong Python (pandas, scikit-learn) and SQL.
+- Understanding of core statistics: hypothesis testing, regression, confidence intervals.
+- Experience building at least one predictive model end to end.
+- Clear communication with non-technical stakeholders.
+
+Nice to have
+- A/B testing / experimentation experience.
+- Docker, AWS (S3, SageMaker) or another cloud platform.
+- Experience with dbt or Airflow.
+- Retail or e-commerce domain knowledge.
+- Power BI or Tableau.
+
+What we offer
+£38,000–£45,000, hybrid working (2 days in office), learning budget, 27 days holiday.
