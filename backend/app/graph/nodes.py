@@ -77,13 +77,20 @@ async def analyze_job(state: HireMateState) -> dict:
             # Pause the graph and wait for the user to paste the job text.
             answer = interrupt({"kind": "need_job_text", "message": str(exc)})
             job_text = str(answer.get("job_text", "")).strip()
-            if len(job_text) < 50:
+            if len(job_text) < settings.min_job_chars:
                 raise ToolError("The pasted job description is too short.")
         updates["job_text"] = job_text
 
-    emit(node, "thinking", "Finding required skills, nice-to-haves, seniority and key words…")
+    # Short posts (e.g. just a title and a few skills) are fine: the analyst fills in the
+    # typical requirements for the role, and says so.
+    short = len(job_text) < settings.short_job_chars
+    if short:
+        emit(node, "thinking", "Short job post: filling in the typical requirements for this kind of role…")
+    else:
+        emit(node, "thinking", "Finding required skills, nice-to-haves, seniority and key words…")
+    note = "\n\n(This post is short: infer the typical requirements for this role.)" if short else ""
     job = await generate_structured(
-        f"JOB POST:\n{job_text}", JobData, prompts.ANALYZE_JOB, temperature=0.0,
+        f"JOB POST:\n{job_text}{note}", JobData, prompts.ANALYZE_JOB, temperature=0.0,
         on_retry=retry_reporter(node),
     )
     # Avoid "Junior Junior Data Scientist" when the title already says the level.

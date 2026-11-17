@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useState } from "react";
+import { MIN_JOB_CHARS, SHORT_JOB_CHARS } from "@/lib/limits";
 
 function Toggle<T extends string>({ value, options, onChange }: {
   value: T; options: { id: T; label: string }[]; onChange: (v: T) => void;
@@ -16,6 +17,19 @@ function Toggle<T extends string>({ value, options, onChange }: {
         </button>
       ))}
     </div>
+  );
+}
+
+/** Friendly note for short job posts: they are accepted, and the agents fill in the gaps. */
+export function ShortJobHint({ text }: { text: string }) {
+  const length = text.trim().length;
+  if (length === 0 || length >= SHORT_JOB_CHARS) return null;
+  return (
+    <p className="mt-2 text-xs text-slate-500">
+      {length < MIN_JOB_CHARS
+        ? "Add a little more: at least the job title and a skill or two."
+        : "Short description: that's OK. The Job Analyst will fill in the typical requirements for this role. More detail gives better tailoring."}
+    </p>
   );
 }
 
@@ -41,7 +55,8 @@ export default function InputForm({ onSubmit, onBack, error }: {
     if (cvMode === "paste" && cvText.trim().length < 100) return setLocalError("Please paste your full CV (at least a few lines).");
     if (cvMode === "pdf" && !cvFile) return setLocalError("Please choose a PDF file for your CV.");
     if (cvFile && cvFile.size > 5 * 1024 * 1024) return setLocalError("That PDF is larger than 5 MB.");
-    if (jobMode === "paste" && jobText.trim().length < 100) return setLocalError("Please paste the full job description.");
+    if (jobMode === "paste" && jobText.trim().length < MIN_JOB_CHARS)
+      return setLocalError("Please add the job: even just the job title and a skill or two is enough.");
     if (jobMode === "link" && !/^https?:\/\//.test(jobUrl.trim())) return setLocalError("Please enter a job link starting with http.");
 
     const form = new FormData();
@@ -82,8 +97,11 @@ export default function InputForm({ onSubmit, onBack, error }: {
             <Toggle value={jobMode} onChange={setJobMode} options={[{ id: "paste", label: "Paste" }, { id: "link", label: "Link" }]} />
           </div>
           {jobMode === "paste" ? (
-            <textarea rows={12} value={jobText} onChange={(e) => setJobText(e.target.value)} className={field}
-              placeholder="Paste the job description here…" />
+            <>
+              <textarea rows={12} value={jobText} onChange={(e) => setJobText(e.target.value)} className={field}
+                placeholder={"Paste the job description here…\n\nShort is fine too, e.g. \"Junior Data Analyst at Acme: SQL, Excel, Power BI\"."} />
+              <ShortJobHint text={jobText} />
+            </>
           ) : (
             <div className="space-y-2">
               <input type="url" value={jobUrl} onChange={(e) => setJobUrl(e.target.value)} className={field}

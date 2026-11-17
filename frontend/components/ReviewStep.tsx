@@ -5,6 +5,8 @@
 
 import { motion } from "framer-motion";
 import { useState } from "react";
+import { ShortJobHint } from "@/components/InputForm";
+import { MIN_JOB_CHARS } from "@/lib/limits";
 import type { SkillGap } from "@/lib/types";
 
 export function ReviewStep({ question, gaps, onSubmit, busy }: {
@@ -79,18 +81,16 @@ export function NeedJobText({ message, onSubmit, busy }: {
       <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">The Job Analyst needs your help</p>
       <h2 className="mt-1 text-xl font-bold text-slate-900">We couldn&apos;t read that job link</h2>
       <p className="mt-1 text-sm text-slate-600">
-        {message} Many job sites block automated readers. Please copy the job description from the page and paste it here.
+        {message} Many job sites block automated readers. Please copy the job description from the page and paste it here. A short version is fine too.
       </p>
       <textarea value={text} onChange={(e) => setText(e.target.value)} rows={10}
-        placeholder="Paste the full job description…"
+        placeholder={"Paste the job description here…\n\nShort is fine too, e.g. \"Junior Data Analyst at Acme: SQL, Excel, Power BI\"."}
         className="mt-4 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
-      <button type="button" disabled={busy || text.trim().length < 100} onClick={() => onSubmit(text)}
+      <ShortJobHint text={text} />
+      <button type="button" disabled={busy || text.trim().length < MIN_JOB_CHARS} onClick={() => onSubmit(text)}
         className="mt-3 rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
         Continue
       </button>
-      {text.trim().length > 0 && text.trim().length < 100 && (
-        <p className="mt-2 text-xs text-slate-500">Please paste the full post (at least a few lines).</p>
-      )}
     </motion.section>
   );
 }

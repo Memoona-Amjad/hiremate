@@ -52,6 +52,18 @@ def test_sample_run_with_review_and_retry(client):
     assert any(e["type"] == "retry" and e["node"] == "critic" for n, e in events if n == "agent")
 
 
+def test_short_job_description_is_accepted(client):
+    cv = (main.SAMPLES_DIR / "sample_cv.txt").read_text(encoding="utf-8")
+    response = client.post("/api/runs", data={"cv_text": cv, "job_text": "Junior Data Scientist, Python and SQL"})
+    events = parse_sse(response.text)
+    assert events[-1][0] == "interrupt"
+    assert any("Short job post" in e["message"] for n, e in events if n == "agent")
+    # Empty-ish input is still rejected with a friendly message.
+    r = client.post("/api/runs", data={"cv_text": cv, "job_text": "Analyst"})
+    assert r.status_code == 400
+    assert "job title" in r.json()["detail"]
+
+
 def test_validation_messages(client):
     r = client.post("/api/runs", data={"cv_text": "too short", "job_text": "x" * 200})
     assert r.status_code == 400

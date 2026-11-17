@@ -154,8 +154,8 @@ async def start_run(
         raise HTTPException(400, "Please add your CV (paste at least a few lines, or upload a PDF).")
     if not job_text and not job_url:
         raise HTTPException(400, "Please paste the job description or give a link to it.")
-    if job_text and len(job_text) < 100:
-        raise HTTPException(400, "The job description looks too short. Please paste the full post.")
+    if job_text and len(job_text) < settings.min_job_chars:
+        raise HTTPException(400, "Please add a little more about the job: at least the job title and a skill or two.")
 
     # ---- Rate limit (only new runs count, not resumes) ----
     allowed, _left = check_and_count(client_ip(request))
@@ -193,8 +193,8 @@ async def resume_run(body: ResumeBody):
     values = saved["values"]
 
     if saved["kind"] == "need_job_text":
-        if not body.job_text or len(body.job_text.strip()) < 100:
-            raise HTTPException(400, "Please paste the full job description.")
+        if not body.job_text or len(body.job_text.strip()) < settings.min_job_chars:
+            raise HTTPException(400, "Please add a little more about the job: at least the job title and a skill or two.")
         # Restart right after the CV parser, now with the pasted job text.
         values = {**values, "job_text": body.job_text.strip()[:MAX_TEXT_CHARS], "job_url": ""}
         return EventSourceResponse(

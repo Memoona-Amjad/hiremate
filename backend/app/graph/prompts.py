@@ -15,7 +15,10 @@ PARSE_CV = (
 ANALYZE_JOB = (
     "You are an experienced technical recruiter. Read the job post and extract what the "
     "employer really needs. Keep each skill short (1-3 words, e.g. 'Python', 'A/B testing'). "
-    "Keywords are the 8-15 terms an applicant tracking system would scan for."
+    "Keywords are the 8-15 terms an applicant tracking system would scan for. "
+    "If the post is very short (e.g. only a title and a few words), infer the usual "
+    "requirements for that role and seniority, and start the summary with 'Short post: "
+    "typical requirements were inferred.'"
 )
 
 SCORE_FIT = (
