@@ -113,6 +113,7 @@ code can't. Using both gives flexibility *and* a hard safety line.
 | Daily free AI quota used up | Friendly message: try again later | Stops trying that model for the day and uses the backup. |
 | AI returns badly formatted JSON | A retry line in the timeline | Validation fails, so it retries automatically. |
 | Job link blocked (e.g. LinkedIn) | "We couldn't read that job link. Please paste the text" | A second LangGraph interrupt pauses the run, the user pastes the text, and the run continues. |
+| Very short job post (e.g. just a title and a few skills) | Accepted, with a hint: "Short description: that's OK…" | The Job Analyst fills in the typical requirements for that role and says so in the timeline. Only near-empty text (under 15 characters) is rejected. |
 | Scanned / unreadable PDF | "That PDF has almost no readable text… please paste the CV text" | Rejected **before** any AI is used. |
 | Visitor used 10 runs today | "You've used all 10 free runs for today… come back tomorrow!" | HTTP 429 with a friendly message. |
 | Backend cold start (free serverless hosting) | "Waking up the server…" if it takes more than a few seconds | The page pings `/api/health` as soon as it opens, to warm the server up early. |
