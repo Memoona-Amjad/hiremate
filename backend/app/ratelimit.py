@@ -1,6 +1,7 @@
 """Very small per-IP daily rate limiter, to protect the free Gemini quota on the public demo.
 
-In-memory is enough here: the demo runs as a single server, and a restart simply resets counts.
+Counts live in memory, so on serverless hosting each instance counts separately and the limit
+is approximate. Good enough to protect a demo; a shared store (e.g. Redis) would make it exact.
 """
 
 from datetime import date
@@ -15,7 +16,7 @@ _lock = Lock()
 
 
 def client_ip(request: Request) -> str:
-    # Render/Vercel put the real visitor IP first in X-Forwarded-For.
+    # Vercel (and most hosts) put the real visitor IP first in X-Forwarded-For.
     forwarded = request.headers.get("x-forwarded-for", "")
     if forwarded:
         return forwarded.split(",")[0].strip()

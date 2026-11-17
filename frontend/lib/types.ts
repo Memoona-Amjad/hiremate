@@ -70,9 +70,10 @@ export interface RunResult {
   draft: number;
 }
 
+// state_token: the paused run, signed by the server. We send it back to resume.
 export type InterruptPayload =
-  | { kind: "confirm_gaps"; question: string; gaps: SkillGap[] }
-  | { kind: "need_job_text"; message: string };
+  | { kind: "confirm_gaps"; question: string; gaps: SkillGap[]; state_token: string }
+  | { kind: "need_job_text"; message: string; state_token: string };
 
 // Events from the SSE stream, already parsed.
 export type StreamEvent =

@@ -37,12 +37,12 @@ def test_sample_run_with_review_and_retry(client):
     events = parse_sse(response.text)
     names = [n for n, _ in events]
     assert names[0] == "run" and names[-1] == "interrupt"
-    run_id = events[0][1]["run_id"]
     interrupt = events[-1][1]
+    token = interrupt["state_token"]
     assert interrupt["kind"] == "confirm_gaps"
     assert {g["skill"] for g in interrupt["gaps"]} == {"Docker", "A/B testing"}
 
-    response = client.post(f"/api/runs/{run_id}/resume", json={"confirmed": ["Docker"], "notes": {"Docker": "side project"}})
+    response = client.post("/api/resume", json={"state_token": token, "confirmed": ["Docker"], "notes": {"Docker": "side project"}})
     events = parse_sse(response.text)
     assert events[-1][0] == "result"
     result = events[-1][1]
@@ -68,9 +68,16 @@ def test_rate_limit(client, monkeypatch):
     assert "free runs" in r.json()["detail"]
 
 
-def test_resume_unknown_run(client):
-    r = client.post("/api/runs/nope/resume", json={"confirmed": []})
-    assert r.status_code == 404
+def test_resume_rejects_bad_or_tampered_token(client):
+    from app.statetoken import make_token
+
+    assert client.post("/api/resume", json={"state_token": "nope", "confirmed": []}).status_code == 400
+    token = make_token("confirm_gaps", {"cv_text": "x"})
+    body, sig = token.rsplit(".", 1)
+    tampered = body[:-2] + ("AA" if body[-2:] != "AA" else "BB") + "." + sig
+    r = client.post("/api/resume", json={"state_token": tampered, "confirmed": []})
+    assert r.status_code == 400
+    assert "expired" in r.json()["detail"]
 
 
 def test_health(client):
@@ -98,11 +105,11 @@ def test_blocked_job_link_asks_user_to_paste(client, monkeypatch):
     events = parse_sse(client.post("/api/runs", data={"cv_text": cv, "job_url": "https://jobs.example.com/1"}).text)
     assert events[-1][0] == "interrupt"
     assert events[-1][1]["kind"] == "need_job_text"
-    run_id = events[0][1]["run_id"]
+    token = events[-1][1]["state_token"]
 
     # Too-short paste is rejected with a friendly message, then a real paste continues the run.
-    assert client.post(f"/api/runs/{run_id}/resume", json={"job_text": "short"}).status_code == 400
-    events = parse_sse(client.post(f"/api/runs/{run_id}/resume", json={"job_text": "A real job post. " * 20}).text)
+    assert client.post("/api/resume", json={"state_token": token, "job_text": "short"}).status_code == 400
+    events = parse_sse(client.post("/api/resume", json={"state_token": token, "job_text": "A real job post. " * 20}).text)
     assert events[-1][0] == "interrupt"
     assert events[-1][1]["kind"] == "confirm_gaps"
 

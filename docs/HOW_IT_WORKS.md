@@ -52,11 +52,12 @@ A chatbot answers one message at a time. HireMate is an **agent system** because
 3. The **LangGraph graph starts**. Each agent sends small progress messages (`started`,
    `thinking`, `tool`, `retry`, `done`). The backend streams these to the browser as
    **Server-Sent Events (SSE)**: one long HTTP response that delivers events as they happen.
-4. After the Fit Scorer, the **human_review** node calls `interrupt(...)`. The graph stops,
-   and its full state is saved by the **checkpointer**. The browser shows the checklist.
+4. After the Fit Scorer, the **human_review** node calls `interrupt(...)`. The graph stops.
+   The server packs the run's full state into a **signed state token** (HMAC-SHA256) and sends
+   it to the browser with the checklist. Nothing is kept in server memory.
 5. The user ticks what is true (and can add a short note, e.g. "used Docker in a side project").
-   The browser calls `POST /api/runs/{id}/resume` with the answer. The graph continues
-   **from exactly where it paused**.
+   The browser calls `POST /api/resume` with the token and the answer. The server checks the
+   signature, loads the state back into the graph, and continues **from exactly where it paused**.
 6. The CV Writer and Letter Writer run. Then the Critic reviews:
    - **Approved (80+)** → finish.
    - **Below 80, and retries left** → back to the CV Writer with the critic's feedback.
@@ -99,6 +100,7 @@ code can't. Using both gives flexibility *and* a hard safety line.
 | **Human-in-the-loop before writing** | Honesty and trust. Recruiters and candidates both care about accuracy. |
 | **Critic with max 2 retries** | Better quality, but with a cap so cost and waiting time stay predictable. |
 | **Rate limit (10 runs/IP/day)** | Protects the free AI quota on a public link. |
+| **Stateless API with signed state tokens** | On serverless hosting (Vercel) each request may run on a different machine, so a paused run can't wait in memory. The browser holds the paused state, and the signature stops anyone editing it (e.g. adding skills that were never offered). Bonus: any number of servers can handle resumes. |
 | **Browser "Save as PDF"** | The simplest *reliable* way to make a PDF: no extra server libraries, and fonts and special characters always work. |
 
 ---
@@ -113,7 +115,8 @@ code can't. Using both gives flexibility *and* a hard safety line.
 | Job link blocked (e.g. LinkedIn) | "We couldn't read that job link. Please paste the text" | A second LangGraph interrupt pauses the run, the user pastes the text, and the run continues. |
 | Scanned / unreadable PDF | "That PDF has almost no readable text… please paste the CV text" | Rejected **before** any AI is used. |
 | Visitor used 10 runs today | "You've used all 10 free runs for today… come back tomorrow!" | HTTP 429 with a friendly message. |
-| Backend asleep (Render free tier) | "Waking up the server (about 30–60 seconds)…" | The page pings `/api/health` as soon as it opens, to wake the server early. |
+| Backend cold start (free serverless hosting) | "Waking up the server…" if it takes more than a few seconds | The page pings `/api/health` as soon as it opens, to warm the server up early. |
+| Paused for more than 2 hours, or a tampered state token | "This session has expired. Please start again." | The signature or age check fails, and nothing runs. |
 | Connection drops mid-run | "We lost the connection to the server…" with a **Try again** button | |
 | Any unexpected server error | "Something went wrong on our side. Please try again." | The real error is logged on the server. Users never see stack traces. |
 | Critic never reaches 80 | Results with "Best of 3 drafts" and the critic's notes | Keeps the highest-scoring draft rather than the last one. |
@@ -137,9 +140,10 @@ box. The flow is also a real graph I can draw and test. Writing that by hand mea
 reinventing state saving and resuming.
 
 **4. How does the human-in-the-loop step work technically?**
-The `human_review` node calls `interrupt()`. LangGraph saves the whole state under a run ID
-and stops. When the user answers, the API resumes the same run ID with `Command(resume=...)`,
-and the graph continues from that exact point.
+The `human_review` node calls `interrupt()` and the graph stops. The server signs the graph's
+state (HMAC) and sends it to the browser as a token. When the user answers, the browser sends
+the token back. The server verifies it, loads the state into a fresh graph (`update_state`),
+and resumes with `Command(resume=...)`. The backend keeps no memory between requests.
 
 **5. What does the critic actually check, and why cap retries at 2?**
 Truthfulness, key-word match, tone and length, each scored 0–100, plus two code tools
@@ -147,9 +151,9 @@ Truthfulness, key-word match, tone and length, each scored 0–100, plus two cod
 After that, we show the best draft with honest notes rather than loop forever.
 
 **6. How would you scale this to many users?**
-Move the checkpointer and rate-limit counts from memory to Postgres or Redis, so several
-servers can share them. Put runs in a job queue. Use a paid model tier for capacity.
-The code is already structured for this: the checkpointer is passed in as one object.
+The API is already stateless (paused runs travel as signed tokens), so it runs on serverless
+hosting and scales out automatically. Next: move rate-limit counts to Redis so all instances
+share them, add a job queue for long runs, and use a paid model tier for capacity.
 
 **7. How much does a run cost?**
 About 6–9 LLM calls per run. On the free tier it costs nothing. On a paid "flash" model
@@ -183,6 +187,7 @@ set of sample CVs to measure quality when prompts or models change.
 | `backend/app/llm.py` | The only file that talks to Gemini (retries, backup model) |
 | `backend/app/main.py` | The API: start run, resume run, SSE streaming |
 | `backend/app/ratelimit.py` | 10 runs per IP per day |
+| `backend/app/statetoken.py` | Signs and checks the paused-run token (stateless resume) |
 | `backend/cli.py` | Run the whole team from the terminal |
 | `frontend/components/HireMateApp.tsx` | The page: landing → run → review → results |
 | `frontend/lib/runState.ts` | Turns streamed events into what each card shows |

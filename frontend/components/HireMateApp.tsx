@@ -72,11 +72,12 @@ export default function HireMateApp() {
     start(form, false);
   };
 
-  const resume = async (body: Parameters<typeof resumeRun>[1]) => {
-    if (!state.runId) return;
+  const resume = async (answer: { confirmed?: string[]; notes?: Record<string, string>; job_text?: string }) => {
+    if (!state.interrupt) return;
+    const body = { ...answer, state_token: state.interrupt.state_token };
     dispatch({ type: "goto", stage: "running" });
     try {
-      await consume((onEvent) => resumeRun(state.runId!, body, onEvent));
+      await consume((onEvent) => resumeRun(body, onEvent));
     } catch (err) {
       dispatch({ type: "fail", message: friendly(err) });
     }

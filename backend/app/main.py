@@ -3,20 +3,22 @@
 Flow for the frontend:
   1. POST /api/runs            (form: CV + job)  → SSE stream of agent events, ends with
                                                     an `interrupt` event (human review) or `result`.
-  2. POST /api/runs/{id}/resume (JSON answer)   → SSE stream again, continuing the same graph.
+  2. POST /api/resume  (JSON: state_token + answer) → SSE stream again, continuing the graph.
+
+The API is stateless: when the graph pauses, the `interrupt` event carries a signed
+`state_token` (see statetoken.py). The browser sends it back to resume, so any server
+instance can continue the run. This is what makes serverless hosting (Vercel) work.
 
 Both streams send these SSE event names:
-  run       {run_id}                  – first event, so the client knows which run this is
+  run       {run_id}                  – first event (an id for logs)
   agent     {node, type, message}     – live timeline step (started/thinking/tool/retry/done)
-  interrupt {kind, ...}               – the graph paused and needs the user
+  interrupt {kind, state_token, ...}  – the graph paused and needs the user
   result    {...}                     – final CV, letter, scores and critic report
   error     {message}                 – friendly error text (never a stack trace)
 """
 
-import asyncio
 import json
 import logging
-import time
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -33,6 +35,7 @@ from app.config import SAMPLES_DIR, settings
 from app.graph.builder import NODE_ORDER, build_graph
 from app.llm import LLMError
 from app.ratelimit import check_and_count, client_ip
+from app.statetoken import InvalidToken, make_token, read_token
 from app.tools import ToolError, pdf_to_text
 
 log = logging.getLogger("hiremate")
@@ -42,7 +45,7 @@ app = FastAPI(title="HireMate API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
-    allow_origin_regex=r"https://hiremate[a-z0-9-]*\.vercel\.app",  # Vercel preview URLs
+    allow_origin_regex=r"https://hiremate[a-z0-9-]*\.vercel\.app",  # our Vercel frontend URLs
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -54,13 +57,10 @@ async def friendly_errors(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(status_code=500, content={"detail": "Something went wrong on our side. Please try again."})
 
 
+# Each request runs on its own short-lived thread in this in-memory checkpointer;
+# nothing needs to survive between requests (the state token carries it).
 checkpointer = InMemorySaver()
 graph = build_graph(checkpointer)
-
-# run_id -> created time; used to clean up old runs and reject unknown ids.
-RUN_TTL_SECONDS = 2 * 60 * 60
-runs: dict[str, float] = {}
-run_locks: dict[str, asyncio.Lock] = {}
 
 MAX_PDF_BYTES = 5 * 1024 * 1024
 MAX_TEXT_CHARS = 30_000
@@ -68,15 +68,6 @@ MAX_TEXT_CHARS = 30_000
 
 def _sample(name: str) -> str:
     return (SAMPLES_DIR / name).read_text(encoding="utf-8")
-
-
-def _cleanup_old_runs() -> None:
-    now = time.time()
-    for run_id, created in list(runs.items()):
-        if now - created > RUN_TTL_SECONDS:
-            runs.pop(run_id, None)
-            run_locks.pop(run_id, None)
-            checkpointer.delete_thread(run_id)
 
 
 def _sse(event: str, data: dict[str, Any]) -> dict[str, str]:
@@ -92,34 +83,42 @@ def _result_payload(values: dict) -> dict:
     return {k: values.get(k) for k in keys}
 
 
-async def _stream_graph(run_id: str, graph_input: Any) -> AsyncIterator[dict[str, str]]:
-    """Run (or resume) the graph and translate everything into SSE events."""
-    config = {"configurable": {"thread_id": run_id}}
-    lock = run_locks.setdefault(run_id, asyncio.Lock())
-    if lock.locked():
-        yield _sse("error", {"message": "This run is already in progress in another tab."})
-        return
+async def _stream_graph(steps: list[Any], prepare: dict | None = None) -> AsyncIterator[dict[str, str]]:
+    """Run the graph and translate everything into SSE events.
 
-    async with lock:
-        yield _sse("run", {"run_id": run_id, "nodes": NODE_ORDER})
-        try:
-            async for event in graph.astream(graph_input, config, stream_mode="custom"):
-                yield _sse("agent", event)
-            state = await graph.aget_state(config)
-            if state.interrupts:
-                yield _sse("interrupt", state.interrupts[0].value)
-            else:
-                yield _sse("result", _result_payload(state.values))
-        except (LLMError, ToolError) as exc:
-            yield _sse("error", {"message": str(exc)})
-        except Exception:
-            log.exception("Run %s failed", run_id)
-            yield _sse("error", {"message": "Something went wrong on our side. Please try again."})
+    `prepare` (optional) = {"values": ..., "as_node": ...}: load a saved state first (resume).
+    `steps` = inputs to run one after another (e.g. [None, Command(resume=...)]).
+    Only events from the last step are streamed to the user.
+    """
+    run_id = uuid.uuid4().hex
+    config = {"configurable": {"thread_id": run_id}}
+    yield _sse("run", {"run_id": run_id, "nodes": NODE_ORDER})
+    try:
+        if prepare:
+            await graph.aupdate_state(config, prepare["values"], as_node=prepare["as_node"])
+        for i, step in enumerate(steps):
+            async for event in graph.astream(step, config, stream_mode="custom"):
+                if i == len(steps) - 1:
+                    yield _sse("agent", event)
+        state = await graph.aget_state(config)
+        if state.interrupts:
+            payload = state.interrupts[0].value
+            token = make_token(payload["kind"], state.values)
+            yield _sse("interrupt", {**payload, "state_token": token})
+        else:
+            yield _sse("result", _result_payload(state.values))
+    except (LLMError, ToolError) as exc:
+        yield _sse("error", {"message": str(exc)})
+    except Exception:
+        log.exception("Run %s failed", run_id)
+        yield _sse("error", {"message": "Something went wrong on our side. Please try again."})
+    finally:
+        checkpointer.delete_thread(run_id)  # free memory: the token holds what we need
 
 
 @app.get("/api/health")
 async def health() -> dict:
-    """Cheap endpoint the frontend calls first, to wake the server up on Render's free tier."""
+    """Cheap endpoint the frontend calls first, to wake the server up (free hosting sleeps)."""
     return {"ok": True, "model_configured": bool(settings.llm_model and settings.gemini_api_key)}
 
 
@@ -137,8 +136,6 @@ async def start_run(
     job_url: str = Form(""),
     cv_file: UploadFile | None = File(None),
 ):
-    _cleanup_old_runs()
-
     # ---- Validate input before spending any AI quota ----
     cv_source = "paste"
     if use_sample:
@@ -171,36 +168,43 @@ async def start_run(
             },
         )
 
-    run_id = uuid.uuid4().hex
-    runs[run_id] = time.time()
     inputs = {
         "cv_text": cv_text[:MAX_TEXT_CHARS],
         "cv_source": cv_source,
         "job_text": job_text[:MAX_TEXT_CHARS],
         "job_url": job_url,
     }
-    return EventSourceResponse(_stream_graph(run_id, inputs), ping=10)
+    return EventSourceResponse(_stream_graph([inputs]), ping=10)
 
 
 class ResumeBody(BaseModel):
+    state_token: str                     # from the `interrupt` event
     confirmed: list[str] | None = None   # answer to "confirm_gaps"
     notes: dict[str, str] | None = None
     job_text: str | None = None          # answer to "need_job_text"
 
 
-@app.post("/api/runs/{run_id}/resume")
-async def resume_run(run_id: str, body: ResumeBody):
-    if run_id not in runs:
-        raise HTTPException(404, "This session has expired. Please start again.")
-    state = await graph.aget_state({"configurable": {"thread_id": run_id}})
-    if not state.interrupts:
-        raise HTTPException(409, "This run is not waiting for an answer.")
+@app.post("/api/resume")
+async def resume_run(body: ResumeBody):
+    try:
+        saved = read_token(body.state_token)
+    except (InvalidToken, ValueError, KeyError):
+        raise HTTPException(400, "This session has expired. Please start again.")
+    values = saved["values"]
 
-    kind = state.interrupts[0].value.get("kind")
-    if kind == "need_job_text":
+    if saved["kind"] == "need_job_text":
         if not body.job_text or len(body.job_text.strip()) < 100:
             raise HTTPException(400, "Please paste the full job description.")
-        answer: dict = {"job_text": body.job_text.strip()[:MAX_TEXT_CHARS]}
-    else:
-        answer = {"confirmed": body.confirmed or [], "notes": body.notes or {}}
-    return EventSourceResponse(_stream_graph(run_id, Command(resume=answer)), ping=10)
+        # Restart right after the CV parser, now with the pasted job text.
+        values = {**values, "job_text": body.job_text.strip()[:MAX_TEXT_CHARS], "job_url": ""}
+        return EventSourceResponse(
+            _stream_graph([None], prepare={"values": values, "as_node": "parse_cv"}), ping=10
+        )
+
+    # confirm_gaps: restore the state just before human_review, let it pause again
+    # (instant, no AI call), then resume it with the user's answer.
+    answer = {"confirmed": body.confirmed or [], "notes": body.notes or {}}
+    return EventSourceResponse(
+        _stream_graph([None, Command(resume=answer)], prepare={"values": values, "as_node": "score_fit"}),
+        ping=10,
+    )

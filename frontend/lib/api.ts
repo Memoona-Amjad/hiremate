@@ -96,13 +96,12 @@ export async function startRun(form: FormData, onEvent: (e: StreamEvent) => void
 }
 
 export async function resumeRun(
-  runId: string,
-  body: { confirmed?: string[]; notes?: Record<string, string>; job_text?: string },
+  body: { state_token: string; confirmed?: string[]; notes?: Record<string, string>; job_text?: string },
   onEvent: (e: StreamEvent) => void,
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}/api/runs/${runId}/resume`, {
+    res = await fetch(`${API_URL}/api/resume`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

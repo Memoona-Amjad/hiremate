@@ -36,7 +36,7 @@ flowchart LR
         UI["Landing · Live timeline · Graph view<br/>Review checklist · Results tabs"]
     end
 
-    subgraph API["FastAPI backend (Render)"]
+    subgraph API["FastAPI backend (Vercel Functions)"]
         EP["POST /api/runs<br/>POST /api/runs/{id}/resume"]
         RL["Per-IP rate limit<br/>(10 runs/day)"]
         subgraph G["LangGraph state machine"]
@@ -44,7 +44,7 @@ flowchart LR
             H --> T[tailor_cv] --> L[write_cover_letter] --> C[critic]
             C -- "score < 80<br/>(max 2 retries)" --> T
         end
-        CK[("Checkpointer<br/>(saves state while paused)")]
+        CK[("Signed state token<br/>(paused run, held by browser)")]
         TOOLS["Tools: pdf_to_text · fetch_job_text<br/>keyword_coverage · truth_check"]
         LLM["LLM wrapper<br/>(retries + backup model)"]
     end
@@ -60,7 +60,8 @@ flowchart LR
 ```
 
 **Why it is built this way**
-- **LangGraph** makes the flow an explicit graph: easy to explain, test and extend. Its **interrupt** pauses the run for the human, and the **checkpointer** saves the state until they answer.
+- **LangGraph** makes the flow an explicit graph: easy to explain, test and extend. Its **interrupt** pauses the run for the human.
+- **A stateless backend.** When the run pauses, the server packs its state into a **signed token** (HMAC) and gives it to the browser. On resume, the server checks the signature (so it can't be tampered with) and continues. No server memory is needed between requests, so it runs on serverless hosting and scales out freely.
 - **Structured output.** Every agent answers in a strict schema (Pydantic), so agents pass clean data to each other rather than free text.
 - **A truth check that isn't just another LLM.** Plain code flags any skill the user declined. That check overrides the critic's score, so a draft that claims one can never pass.
 - **Server-Sent Events** stream each agent step to the browser as it happens.
@@ -72,7 +73,7 @@ flowchart LR
 | Agents | Python 3.12, LangGraph, Pydantic, Google Gemini (`google-genai` SDK) |
 | API | FastAPI, Server-Sent Events (`sse-starlette`), `pypdf`, `httpx` + `trafilatura` |
 | Frontend | Next.js (App Router), TypeScript, Tailwind CSS, framer-motion, react-markdown |
-| Hosting | Render (backend, free) · Vercel (frontend, free) |
+| Hosting | Vercel (frontend + Python backend as two projects, free Hobby plan). A `Dockerfile` is included for any container host. |
 | Tests | pytest (graph, API, tools; uses a fake LLM, so no API key needed) |
 
 ## Run locally (Windows)
@@ -112,7 +113,8 @@ Open http://localhost:3000 and click **Try with a sample**.
 
 - **Free AI capacity.** The demo runs on Gemini's free tier, which is sometimes overloaded (HTTP 503) or rate-limited. The app retries with a backup model and shows this in the timeline, but a run can still fail at busy times. A paid key removes this.
 - **Lite models.** The free "flash" model allows only ~20 requests a day, so the demo uses `gemini-3.5-flash-lite`. A stronger model would write better drafts (it is one setting: `LLM_MODEL`).
-- **In-memory state.** Paused runs and rate-limit counts live in server memory. They are lost when the free server restarts and only work with one server. Next step: a Postgres/Redis checkpointer.
+- **Rate limit is per server instance.** The backend is stateless (paused runs travel as signed tokens), but rate-limit counts live in each instance's memory, so the 10-runs-a-day limit is approximate on serverless hosting. Next step: a shared store (e.g. Redis).
+- **5-minute limit per step.** Each request on Vercel's free plan can run for at most 5 minutes. A normal run takes 1–2 minutes, but a very busy AI service could push past that.
 - **Truth check is word-based.** It catches declined skills reliably, but can't judge every rewording. The critic LLM covers the rest. Next step: claim-by-claim evidence linking.
 - **PDF download** uses the browser's "Save as PDF" print dialog, chosen for reliability. Next step: designed CV templates.
 - **Job links.** Many job sites (e.g. LinkedIn) block automated readers. The agent then asks the user to paste the text.
