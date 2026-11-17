@@ -2,7 +2,7 @@
 
 **A team of AI agents that tailors your CV and cover letter to a job, asks before changing anything, and checks its own work.**
 
-**Live demo:** _coming soon_ · click **"Try with a sample"**, no upload needed.
+**Live demo: [hiremate-brown.vercel.app](https://hiremate-brown.vercel.app)** · click **"Try with a sample"**, no upload needed.
 
 ![HireMate pauses and asks the user to confirm skill gaps, while the live agent timeline and graph show progress](docs/screenshots/review.png)
 

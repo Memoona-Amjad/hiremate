@@ -72,12 +72,16 @@ function applyAgentEvent(state: RunState, e: AgentEvent): RunState {
   let status: NodeStatus = node.status;
   let { criticRetries, criticScores } = state;
 
+  // A critic *verdict* carries a score. Other "retry" events (e.g. the AI service was busy
+  // and the call is being retried) must not be counted as the critic sending a draft back.
+  const isVerdict = e.node === "critic" && (e.type === "done" || e.type === "retry") && e.data?.score !== undefined;
+
   if (e.type === "started") status = e.node === "human_review" ? "waiting" : "active";
   else if (e.type === "done") status = "done";
-  else if (e.type === "retry" && e.node === "critic") status = "retry";
+  else if (isVerdict && e.type === "retry") status = "retry";
 
   // Track the critic's verdict on each draft, so the loop is visible.
-  if (e.node === "critic" && (e.type === "done" || e.type === "retry")) {
+  if (isVerdict) {
     const score = Number(e.data?.score ?? 0);
     const passed = e.type === "done" && e.data?.passed !== false;
     criticScores = [...criticScores, { draft: criticScores.length + 1, score, passed }];
