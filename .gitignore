@@ -35,3 +35,7 @@ desktop.ini
 
 # Claude Code local settings
 .claude/
+
+# Private notes (kept locally, not published)
+CLAUDE.md
+docs/HOW_IT_WORKS.md
